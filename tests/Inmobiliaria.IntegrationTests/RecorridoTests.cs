@@ -6,6 +6,7 @@ using Inmobiliaria.Application.Persistencia;
 using Inmobiliaria.Contracts;
 using Microsoft.Data.SqlClient;
 using SkiaSharp;
+using Microsoft.Extensions.DependencyInjection;
 namespace Inmobiliaria.IntegrationTests;
 
 [CollectionDefinition("Recorrido", DisableParallelization = true)]
@@ -87,7 +88,24 @@ public sealed class RecorridoTests(ApiSqlFixture app)
         using(var response=await comprador.PostAsync($"{rutaVisitas}/{visita.IdVisita}/confirmar",null)) Assert.Equal(HttpStatusCode.NoContent,response.StatusCode);
         Assert.Equal("Confirmada",Assert.Single((await vendedor.GetFromJsonAsync<List<VisitaDto>>(rutaVisitas))!).Estado);
         using(var response=await comprador.PostAsync($"{rutaVisitas}/{visita.IdVisita}/cancelar",null)) Assert.Equal(HttpStatusCode.NoContent,response.StatusCode);
-        Assert.Equal(1, await app.Scalar("SELECT COUNT(*) FROM Solicitudes WHERE IdPublicacion=@id", new SqlParameter("@id", idPublicacion)));
+        var segundaSolicitud=await app.Scalar("INSERT INTO Solicitudes(IdComprador,IdPublicacion,TipoSolicitud,EstadoSolicitud,FechaSolicitud) SELECT IdComprador,IdPublicacion,'Alquiler','Aceptada',SYSUTCDATETIME() FROM Solicitudes WHERE IdSolicitud=@id; SELECT CAST(SCOPE_IDENTITY() AS int)",new SqlParameter("@id",respondida.IdSolicitud));
+        var usuarioVendedor=await app.Scalar("SELECT IdUsuario FROM Usuarios WHERE Correo='vendedor@recorrido.example'");
+        var usuarioComprador=await app.Scalar("SELECT IdUsuario FROM Usuarios WHERE Correo='comprador@recorrido.example'");
+        var propuestaReserva=new CrearReservaRequest(DateTimeOffset.UtcNow.AddDays(5),DateTimeOffset.UtcNow.AddDays(8),1000.25m);
+        async Task<string?> Reservar(int usuario,int id,CrearReservaRequest? nueva,bool confirmar=false) {
+            using var scope=app.Services.CreateScope();return await scope.ServiceProvider.GetRequiredService<IReservasRepository>().Cambiar(usuario,id,nueva,confirmar);
+        }
+        var reservasConcurrentes=await Task.WhenAll(Reservar(usuarioVendedor,respondida.IdSolicitud,propuestaReserva),Reservar(usuarioVendedor,segundaSolicitud,propuestaReserva));
+        Assert.Single(reservasConcurrentes,r=>r is null);Assert.Single(reservasConcurrentes,r=>r=="SOLAPADA");
+        var ganadora=reservasConcurrentes[0] is null ? respondida.IdSolicitud : segundaSolicitud;
+        var bloqueada=ganadora==respondida.IdSolicitud ? segundaSolicitud : respondida.IdSolicitud;
+        Assert.Equal("PROHIBIDO",await Reservar(usuarioVendedor,ganadora,null,true));
+        Assert.Null(await Reservar(usuarioComprador,ganadora,null,true));
+        Assert.Null(await Reservar(usuarioComprador,ganadora,null));
+        Assert.Null(await Reservar(usuarioVendedor,bloqueada,propuestaReserva));
+        Assert.Equal("NO_ENCONTRADA",await Reservar(999999,ganadora,null));
+        Assert.Equal(2,await app.Scalar("SELECT COUNT(*) FROM Reservaciones"));
+        Assert.Equal(2, await app.Scalar("SELECT COUNT(*) FROM Solicitudes WHERE IdPublicacion=@id", new SqlParameter("@id", idPublicacion)));
         await Registrar(otro, "compradores", "otro@recorrido.example", "10000000003");
         await Entrar(otro, "otro@recorrido.example");
         Assert.Empty((await otro.GetFromJsonAsync<List<SolicitudDto>>("/api/v1/solicitudes"))!);

@@ -19,12 +19,14 @@ public sealed class RecorridoUiTests
         public PropiedadRequest? Propiedad { get; private set; }
         public PublicacionRequest? Publicacion { get; private set; }
         public string? Token { get; private set; }
+        public string? UltimaMutacion { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Token = request.Headers.Authorization?.Parameter;
             var ruta = request.RequestUri!.AbsolutePath;
             if (request.Method == HttpMethod.Post)
             {
+                UltimaMutacion=ruta;
                 if (ruta.EndsWith("solicitudes")) Solicitud = await request.Content!.ReadFromJsonAsync<SolicitudAlquilerRequest>(cancellationToken);
                 if (ruta.EndsWith("propiedades")) Propiedad = await request.Content!.ReadFromJsonAsync<PropiedadRequest>(cancellationToken);
                 if (ruta.EndsWith("publicaciones")) Publicacion = await request.Content!.ReadFromJsonAsync<PublicacionRequest>(cancellationToken);
@@ -32,6 +34,9 @@ public sealed class RecorridoUiTests
             }
             object datos = ruta switch
             {
+                "/api/v1/solicitudes/1/contratos" => new[]{new ContratoDto(1,"ACA-PRUEBA",DateTime.UtcNow.AddDays(1),DateTime.UtcNow.AddDays(30),20000,"DOP","Borrador")},
+                "/api/v1/solicitudes/1/pagos" => Array.Empty<PagoDto>(),
+                "/api/v1/notificaciones" => new[]{new NotificacionDto(1,"Solicitud aceptada","Prueba","/mis-solicitudes",false,DateTime.UtcNow)},
                 "/api/v1/publicaciones/15/imagenes" => ConGaleria ? new[] { new ImagenDto(1, "foto1.jpg", 0), new ImagenDto(2, "foto2.jpg", 1) } : Array.Empty<ImagenDto>(),
                 "/api/v1/publicaciones" => new[] { new PublicacionResumen(15, "Casa de prueba", "Ciudad", "Sector", 2, 1, 15000, "DOP", null, null) },
                 "/api/v1/catalogos/tipos" => new[] { new InmobiliariaApi.TipoDto(1, "Casa") },
@@ -54,6 +59,31 @@ public sealed class RecorridoUiTests
         return handler;
     }
 
+    [Fact]
+    public void Comprador_ConfirmaAcuerdoSoloTrasConfirmacionExplicita()
+    {
+        using var context=new BunitContext();var api=Preparar(context,"Comprador");
+        var page=context.Render<ContratoSolicitud>(p=>p.Add(x=>x.Id,1));
+        page.FindAll("button").Single(b=>b.TextContent=="Confirmar acuerdo académico").Click();
+        Assert.Null(api.UltimaMutacion);
+        Assert.Contains("No es una firma legal",page.Markup);
+        page.FindAll("button").Single(b=>b.TextContent=="Confirmar operación").Click();
+        page.WaitForAssertion(()=>Assert.Equal("/api/v1/solicitudes/1/contratos/activar",api.UltimaMutacion));
+    }
+    [Fact]
+    public void Vendedor_NoPuedeConfirmarAcuerdoDelComprador()
+    {
+        using var context=new BunitContext();Preparar(context,"Vendedor");
+        var page=context.Render<ContratoSolicitud>(p=>p.Add(x=>x.Id,1));
+        Assert.DoesNotContain(page.FindAll("button"),b=>b.TextContent=="Confirmar acuerdo académico");
+    }
+    [Fact]
+    public void Notificaciones_EnvianTokenAlMarcarLeida()
+    {
+        using var context=new BunitContext();var api=Preparar(context,"Comprador");
+        var page=context.Render<Notificaciones>();page.FindAll("button").Single(b=>b.TextContent=="Marcar como leída").Click();
+        page.WaitForAssertion(()=>Assert.Equal("/api/v1/notificaciones/1/leer",api.UltimaMutacion));Assert.Equal("token-prueba",api.Token);
+    }
     [Fact]
     public void Galeria_PermiteRecorrerImagenes()
     {

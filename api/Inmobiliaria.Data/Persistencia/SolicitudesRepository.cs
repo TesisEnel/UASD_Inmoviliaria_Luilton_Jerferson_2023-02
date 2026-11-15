@@ -25,6 +25,7 @@ internal sealed class SolicitudesRepository(ContextoDatos db) : ISolicitudesRepo
         if(entidad.EstadoSolicitud != "Pendiente" || propiedad.EliminadoEn != null || propiedad.EstadoPropiedad != "Disponible" || anuncio.EstadoPublicacion != "Publicada") return "NO_DISPONIBLE";
         entidad.EstadoSolicitud = aceptar ? "Aceptada" : "Rechazada";
         entidad.Respuesta = motivo; entidad.FechaRespuesta = DateTime.UtcNow;
+        await EventosSolicitud.Agregar(db,solicitud,aceptar ? "Solicitud aceptada" : "Solicitud rechazada");
         await db.SaveChangesAsync(); await tx.CommitAsync(); return null;
     }
     public async Task<(EstadoSolicitudCreada Estado, int Id)> Crear(int idUsuario, SolicitudAlquilerRequest solicitud, DateTime ahora)
@@ -54,6 +55,8 @@ internal sealed class SolicitudesRepository(ContextoDatos db) : ISolicitudesRepo
         var entidad = new Solicitudes { IdComprador = comprador.IdComprador, IdPublicacion = solicitud.IdPublicacion,
             TipoSolicitud = "Alquiler", Mensaje = solicitud.Mensaje, EstadoSolicitud = "Pendiente", FechaSolicitud = ahora };
         db.Solicitudes.Add(entidad);
+        await db.SaveChangesAsync();
+        await EventosSolicitud.Agregar(db,entidad.IdSolicitud,"Nueva solicitud de alquiler");
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return (EstadoSolicitudCreada.Creada, entidad.IdSolicitud);

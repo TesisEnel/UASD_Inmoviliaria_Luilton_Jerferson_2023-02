@@ -15,7 +15,7 @@ try {
         if ($constructorAzure.DataSource -notmatch '(?i)\.database\.windows\.net(?:,1433)?$') { throw 'La cadena debe apuntar al servidor Azure SQL de tu proyecto.' }
         $constructorAzure.set_Encrypt($true)
         $constructorAzure.set_TrustServerCertificate($false)
-        $constructorAzure.set_ConnectTimeout(15)
+        $constructorAzure.set_ConnectTimeout(60)
         $conexionAzure = New-Object System.Data.SqlClient.SqlConnection($constructorAzure.ConnectionString)
         try {
             try { $conexionAzure.Open() }
@@ -28,6 +28,7 @@ try {
                         40615 { throw 'Azure bloqueo tu IP. En el portal Azure, abre Redes del servidor SQL y agrega la IP publica actual del cliente al firewall. Guarda los cambios y reintenta.' }
                         18456 { throw 'Azure rechazo el usuario o la contrasena SQL. Revisa User ID y Password; sustituye el marcador {your_password} de la cadena.' }
                         4060 { throw 'No se pudo abrir la base indicada. Revisa Database/Initial Catalog y los permisos del usuario SQL.' }
+                        40613 { throw 'Azure informa que la base no esta disponible temporalmente. Espera a que se reactive y reintenta; no es un rechazo de contrasena.' }
                         -2 { throw 'La conexion a Azure agoto el tiempo de espera. Revisa el servidor, acceso publico, firewall y salida de red al puerto 1433.' }
                         default { throw "Fallo de conexion SQL a Azure (codigo $numeroAzure). La cadena no se guardo. Comunica este codigo para continuar el diagnostico." }
                     }
@@ -36,8 +37,9 @@ try {
             }
             Write-Host 'Conexion a Azure correcta. Comprobando el esquema...'
             $consultaAzure = $conexionAzure.CreateCommand()
-            $consultaAzure.CommandText = "SELECT COUNT(*) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.Propiedades') AND name='EliminadoEn'"
-            if ([int]$consultaAzure.ExecuteScalar() -ne 1) { throw 'Falta aplicar database/004_archivado.sql en la base Azure existente antes de usar esta version.' }
+            $consultaAzure.CommandText = 'SELECT TOP(0) EliminadoEn FROM dbo.Propiedades; SELECT TOP(0) Respuesta FROM dbo.Solicitudes;'
+            try { $consultaAzure.ExecuteNonQuery() | Out-Null }
+            catch { throw 'La conexion funciona pero no se pudo validar el esquema. Un administrador debe comprobar permisos y aplicar 004_archivado.sql y 005_respuesta_solicitudes.sql antes de usar esta version.' }
         }
         finally { $conexionAzure.Dispose() }
         $bytesAzure = New-Object byte[] 48

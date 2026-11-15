@@ -11,6 +11,7 @@
 @if(Sesion.Usuario?.Rol == "Vendedor") { <NavLink href="/mis-propiedades" @onclick="Cerrar">Mis propiedades</NavLink><NavLink href="/archivo" @onclick="Cerrar">Administrar</NavLink> }
 @if(Sesion.Usuario?.Rol is "Comprador" or "Vendedor") { <NavLink href="/mis-solicitudes" @onclick="Cerrar">Solicitudes</NavLink> }
 <div class="nav-account">
+@if(Sesion.EstaAutenticado){<NavLink href="/notificaciones" @onclick="Cerrar">Notificaciones</NavLink>}
 @if(Sesion.EstaAutenticado) { <span class="account-name">@Sesion.Usuario?.Nombre <small>@Sesion.Usuario?.Rol</small></span><button class="btn btn-outline-primary btn-sm" @onclick="Salir">Salir</button> }
 else { <NavLink href="/login" @onclick="Cerrar">Iniciar sesión</NavLink><NavLink class="btn btn-primary" href="/registro/vendedor" @onclick="Cerrar">Publicar propiedad ↗</NavLink> }
 </div></nav></div>

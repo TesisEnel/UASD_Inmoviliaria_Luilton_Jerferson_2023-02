@@ -1,0 +1,22 @@
+@page "/notificaciones"
+@using Inmobiliaria.Contracts
+@using Inmobiliaria.Web.Services
+@inject InmobiliariaApi Api
+@inject SesionUsuario Sesion
+<PageTitle>Notificaciones</PageTitle><p class="eyebrow">TU ACTIVIDAD</p><h1>Notificaciones.</h1>
+@if(mensaje is not null){<p class="alert alert-info" role="status">@mensaje</p>}
+@if(!Sesion.EstaAutenticado){<a href="/login">Inicia sesión para continuar</a>}
+else{
+<button disabled="@ocupado" class="btn btn-outline-primary mb-3" @onclick="Cargar">Actualizar</button>
+@if(items is {Count:0}){<p>No tienes notificaciones.</p>}
+@foreach(var n in items??[]){<article class="card card-body mb-3"><p class="eyebrow">@(n.Leida?"LEÍDA":"NUEVA") · @n.Fecha.ToString("dd/MM/yyyy HH:mm") UTC</p><h2 class="h5">@n.Titulo</h2><p>@n.Mensaje</p>
+@if(!n.Leida){<button class="btn btn-outline-primary" disabled="@ocupado" @onclick="() => Leer(n.IdNotificacion)">Marcar como leída</button>}
+@if(n.Url is not null && n.Url.StartsWith('/') && !n.Url.StartsWith("//") && !n.Url.Contains('\\')){<a class="btn btn-link" href="@n.Url">Ver detalle →</a>}
+</article>}
+}
+@code{
+List<NotificacionDto>? items;bool ocupado;string? mensaje;
+protected override Task OnInitializedAsync()=>Cargar();
+async Task Cargar(){if(Sesion.Token is null)return;ocupado=true;try{items=await Api.Consultar<List<NotificacionDto>>("api/v1/notificaciones",Sesion.Token);}catch(Exception ex)when(ex is HttpRequestException or TaskCanceledException){mensaje="No se pudieron cargar las notificaciones.";}finally{ocupado=false;}}
+async Task Leer(int id){if(ocupado||Sesion.Token is null)return;ocupado=true;mensaje=await Api.Enviar(HttpMethod.Post,$"api/v1/notificaciones/{id}/leer",null,Sesion.Token);await Cargar();}
+}
