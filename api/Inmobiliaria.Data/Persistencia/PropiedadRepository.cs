@@ -94,7 +94,7 @@ internal sealed class PropiedadRepository(ContextoDatos db) : IPropiedadReposito
 
         var solicitudes = from s in db.Solicitudes join a in db.Publicaciones on s.IdPublicacion equals a.IdPublicacion
             where a.IdPropiedad == id select s.IdSolicitud;
-        if (await db.Reservaciones.AnyAsync(r => solicitudes.Contains(r.IdSolicitud) && (r.EstadoReservacion == "Pendiente" || r.EstadoReservacion == "Confirmada"))
+        if (await db.Reservaciones.AnyAsync(r => solicitudes.Contains(r.IdSolicitud) && r.FechaFin > DateTime.UtcNow && (r.EstadoReservacion == "Pendiente" || r.EstadoReservacion == "Confirmada"))
             || await db.Contratos.AnyAsync(c => solicitudes.Contains(c.IdSolicitud)
                 && c.EstadoContrato != "Cancelado" && c.EstadoContrato != "Finalizado" && c.EstadoContrato != "Completado"
                 && c.EstadoContrato != "Rescindido" && c.EstadoContrato != "Expirado" && c.EstadoContrato != "Rechazado"))

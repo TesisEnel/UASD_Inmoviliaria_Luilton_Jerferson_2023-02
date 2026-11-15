@@ -69,9 +69,10 @@ internal sealed class CuentasRepository(ContextoDatos db) : ICuentasRepository
         await db.SaveChangesAsync();
     }
 
-    public Task<List<VendedorPendienteDto>> Pendientes() => db.Vendedores.AsNoTracking()
-        .Where(v => v.EstadoAprobacion == "Pendiente")
-        .Select(v => new VendedorPendienteDto(v.IdVendedor, v.IdUsuario, v.FechaSolicitud)).ToListAsync();
+    public Task<List<VendedorPendienteDto>> Pendientes() => (
+        from v in db.Vendedores.AsNoTracking() join u in db.Usuarios on v.IdUsuario equals u.IdUsuario
+        where v.EstadoAprobacion == "Pendiente" orderby v.FechaSolicitud
+        select new VendedorPendienteDto(v.IdVendedor,v.IdUsuario,v.FechaSolicitud,u.Correo,u.Nombre+" "+u.Apellido)).ToListAsync();
 
     public async Task<EstadoDecision> Decidir(int idVendedor, AdministradorAutorizado admin, bool aprobar,
         string? motivo, DateTime ahora)

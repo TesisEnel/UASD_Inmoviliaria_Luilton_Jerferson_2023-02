@@ -19,6 +19,8 @@ builder.Services.AddScoped<CuentasService>();
 builder.Services.AddScoped<PublicacionesService>();
 builder.Services.AddScoped<SolicitudesService>();
 builder.Services.AddScoped<VisitasService>();
+builder.Services.AddScoped<ReservasService>();
+builder.Services.AddScoped<CierreService>();
 builder.Services.AddScoped<ArchivoService>();
 builder.Services.AddScoped<IClavesCuenta, ClavesIdentity>();
 builder.Services.AddHttpContextAccessor();

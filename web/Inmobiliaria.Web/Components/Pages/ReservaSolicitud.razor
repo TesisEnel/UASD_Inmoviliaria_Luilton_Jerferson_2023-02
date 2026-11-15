@@ -1,0 +1,41 @@
+@page "/solicitudes/{Id:int}/reserva"
+@using Inmobiliaria.Contracts
+@using Inmobiliaria.Web.Services
+@inject InmobiliariaApi Api
+@inject SesionUsuario Sesion
+<PageTitle>Reservación</PageTitle><h1>Reserva de la solicitud #@Id</h1>
+<p>Acuerdo de reserva académico. No se efectúan cobros. Fechas en horario de República Dominicana (UTC−04:00).</p>
+@if(mensaje is not null) { <p role="status" class="alert alert-info">@mensaje</p> }
+@if(!Sesion.EstaAutenticado) { <a href="/login">Iniciar sesión</a> }
+else {
+<button class="btn btn-outline-primary mb-3" disabled="@ocupado" @onclick="Cargar">Actualizar</button>
+@if(listo && reservas.Count==0 && Sesion.Usuario?.Rol=="Vendedor") {
+<section class="card card-body"><h2 class="h5">Proponer reserva</h2><p>Solo para solicitudes aceptadas. El importe usa la moneda de la publicación.</p>
+<label for="inicio-reserva">Inicio del periodo</label><input id="inicio-reserva" class="form-control mb-3" type="datetime-local" @bind="inicio" />
+<label for="fin-reserva">Fin del periodo</label><input id="fin-reserva" class="form-control mb-3" type="datetime-local" @bind="fin" />
+<label for="monto-reserva">Monto acordado</label><input id="monto-reserva" class="form-control mb-3" type="number" min="0" max="999999999" step="0.01" @bind="monto" />
+<button class="btn btn-primary" disabled="@ocupado" @onclick="Crear">Proponer reserva</button></section>
+}
+@foreach(var r in reservas) {
+<article class="card card-body mb-3"><h2 class="h5">@r.Estado</h2><p>@Mostrar(r.InicioUtc) — @Mostrar(r.FinUtc)</p><p>@r.Moneda @r.Monto.ToString("N2")</p>
+@if(r.Estado is "Pendiente" or "Confirmada") {
+@if(r.Estado=="Pendiente" && Sesion.Usuario?.Rol=="Comprador") {<button class="btn btn-success" disabled="@ocupado" @onclick='() => Accion("confirmar")'>Confirmar reserva</button>}
+<button class="btn btn-outline-danger" disabled="@ocupado" @onclick="() => cancelar=true">Cancelar reserva</button>
+@if(cancelar) {<p>¿Confirmas la cancelación? Se conservará en el historial.</p><button disabled="@ocupado" @onclick='() => Accion("cancelar")'>Sí, cancelar</button><button @onclick="() => cancelar=false">Volver</button>}
+}
+</article>
+}
+<a href="/mis-solicitudes">Volver a solicitudes</a>
+}
+@code {
+[Parameter] public int Id {get;set;}
+List<ReservaDto> reservas=[];string? mensaje;bool ocupado,listo,cancelar;
+DateTime inicio=DateTime.UtcNow.AddHours(-4).AddDays(1),fin=DateTime.UtcNow.AddHours(-4).AddDays(3);decimal monto;
+string Ruta=>$"api/v1/solicitudes/{Id}/reserva";
+static DateTimeOffset Fecha(DateTime fecha)=>new(DateTime.SpecifyKind(fecha,DateTimeKind.Unspecified),TimeSpan.FromHours(-4));
+static string Mostrar(DateTime utc)=>new DateTimeOffset(DateTime.SpecifyKind(utc,DateTimeKind.Utc)).ToOffset(TimeSpan.FromHours(-4)).ToString("dd/MM/yyyy HH:mm");
+protected override Task OnParametersSetAsync()=>Cargar();
+async Task Cargar(){if(Sesion.Token is null)return;ocupado=true;listo=false;try{reservas=await Api.Consultar<List<ReservaDto>>(Ruta,Sesion.Token);listo=true;}catch(Exception ex) when(ex is HttpRequestException or TaskCanceledException){mensaje="No se pudo cargar la reserva. Comprueba tu sesión y la solicitud.";}finally{ocupado=false;}}
+async Task Crear(){if(ocupado||Sesion.Token is null)return;if(Fecha(inicio)<=DateTimeOffset.UtcNow||fin<=inicio||monto<0||monto>999999999||decimal.Round(monto,2)!=monto){mensaje="Revisa las fechas futuras y el importe (máximo dos decimales).";return;}ocupado=true;mensaje=await Api.Enviar(HttpMethod.Post,Ruta,new CrearReservaRequest(Fecha(inicio),Fecha(fin),monto),Sesion.Token)??"Reserva propuesta. El comprador puede confirmarla.";await Cargar();}
+async Task Accion(string accion){if(ocupado||Sesion.Token is null)return;ocupado=true;mensaje=await Api.Enviar(HttpMethod.Post,$"{Ruta}/{accion}",null,Sesion.Token)??"Reserva actualizada.";cancelar=false;await Cargar();}
+}

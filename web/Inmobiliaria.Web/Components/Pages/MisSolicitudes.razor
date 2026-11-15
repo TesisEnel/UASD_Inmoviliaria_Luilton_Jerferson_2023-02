@@ -20,6 +20,8 @@ else
             @if (Sesion.Usuario?.Rol == "Vendedor") { <p>Comprador: @s.Comprador</p> }
             <p>@s.Mensaje</p>
             <a class="btn btn-outline-secondary mb-2" href="@($"/solicitudes/{s.IdSolicitud}/visitas")">Ver visitas</a>
+            <a class="btn btn-outline-primary mb-2" href="@($"/solicitudes/{s.IdSolicitud}/reserva")">Ver reserva</a>
+            <a class="btn btn-outline-primary mb-2" href="@($"/solicitudes/{s.IdSolicitud}/contrato")">Contrato y pagos</a>
             @if(s.FechaRespuesta is not null) { <p>Respuesta: @s.Respuesta · @s.FechaRespuesta.Value.ToString("dd/MM/yyyy HH:mm") UTC</p> }
             @if(Sesion.Usuario?.Rol == "Vendedor" && s.Estado == "Pendiente" && !s.PublicacionRetirada) {
                 <button class="btn btn-outline-primary" disabled="@respondiendo" @onclick="() => seleccionar = s.IdSolicitud">Responder</button>

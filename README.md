@@ -19,6 +19,7 @@ Las pruebas HTTP/SQL estan en tests/Inmobiliaria.IntegrationTests y usan SQL Ser
 Las pruebas unitarias de los cuatro servicios estan en tests/Inmobiliaria.Application.UnitTests, con xUnit y Moq. Se ejecutan con dotnet test Inmobiliaria.sln y usan repositorios simulados, sin conexion a SQL ni secretos. Cubren permisos, registro/login, decisiones administrativas, propiedades y publicaciones; no sustituyen las pruebas de integracion SQL/HTTP.
 Blazor incluye registro/login, catalogo, creacion/edicion de propiedades, publicacion de alquileres y envio/consulta de solicitudes. La administracion sigue reservada a Windows Forms; por ahora la aprobacion se prueba mediante API. Escritorio y Android siguen pendientes.
 Imagenes: hasta 8 por propiedad/publicacion, carga JPG/PNG/WebP y galeria en el catalogo. Consulta docs/imagenes.md para limites y almacenamiento local.
+Contratos academicos, pagos simulados, cierre del alquiler y notificaciones implementados: docs/cierre-alquiler.md. Panel Windows Forms: dotnet run --project ./desktop/Inmobiliaria.Admin (ver desktop/README.md). El proyecto de escritorio requiere Windows Desktop al compilar la solucion.
 Consulta docs/recorrido-local.md para preparar una base LocalDB separada, iniciar API/Web y reproducir el recorrido completo. scripts/recorrido-local.ps1 incluye preparacion, arranque y aprobacion administrativa por API.
 
 ## Base Azure: paso posterior al build

@@ -25,6 +25,6 @@ public interface IClavesCuenta
 public sealed record Cuenta(UsuarioResponse Usuario, string Estado, string PasswordHash);
 public sealed record NuevaCuenta(string Correo, string Nombre, string Apellido, string Telefono, string PasswordHash, string Rol, string? Cedula = null);
 public sealed record AdministradorAutorizado(int IdUsuario, int IdAdministrador);
-public sealed record VendedorPendienteDto(int IdVendedor, int IdUsuario, DateTime FechaSolicitud);
+public sealed record VendedorPendienteDto(int IdVendedor, int IdUsuario, DateTime FechaSolicitud, string Correo = "", string Nombre = "");
 public enum EstadoRegistro { Creado, Duplicado, DocumentoDuplicado, SinRol }
 public enum EstadoDecision { Guardada, NoEncontrado, YaDecidido }

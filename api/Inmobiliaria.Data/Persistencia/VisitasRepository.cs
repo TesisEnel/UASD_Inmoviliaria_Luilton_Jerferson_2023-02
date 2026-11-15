@@ -45,6 +45,7 @@ internal sealed class VisitasRepository(ContextoDatos db) : IVisitasRepository
             if(confirmar && entidad.EstadoVisita != "Solicitada") return "CONFLICTO";
             entidad.EstadoVisita = confirmar ? "Confirmada" : "Cancelada";
         }
+        await EventosSolicitud.Agregar(db,solicitud,nueva is not null ? "Visita propuesta" : confirmar ? "Visita confirmada" : "Visita cancelada",$"/solicitudes/{solicitud}/visitas");
         await db.SaveChangesAsync(); await tx.CommitAsync(); return null;
     }
 }

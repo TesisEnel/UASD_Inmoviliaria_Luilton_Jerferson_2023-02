@@ -1,0 +1,53 @@
+@page "/solicitudes/{Id:int}/contrato"
+@using Inmobiliaria.Contracts
+@using Inmobiliaria.Web.Services
+@inject InmobiliariaApi Api
+@inject SesionUsuario Sesion
+<PageTitle>Contrato y pagos académicos</PageTitle>
+<p class="eyebrow">CIERRE DEL ALQUILER · SOLICITUD #@Id</p><h1>Contrato y pagos.</h1>
+<div class="alert alert-warning">Simulación académica: no es un contrato legal ni una firma electrónica. No se realizan cobros ni transferencias.</div>
+@if(mensaje is not null){<p role="status" class="alert alert-info">@mensaje</p>}
+@if(Sesion.Usuario?.Rol is not ("Comprador" or "Vendedor")){<a href="/login">Inicia sesión para consultar tu solicitud</a>}
+else {
+<button class="btn btn-outline-primary mb-3" disabled="@ocupado" @onclick="Cargar">Actualizar</button>
+@if(listo && contratos.Count==0 && Sesion.Usuario?.Rol=="Vendedor") {
+    <section class="card card-body"><h2 class="h5">Proponer contrato académico</h2><p>Requiere una reserva confirmada y vigente. Se copiarán sus fechas; el monto mensual y moneda serán los de la publicación.</p><button class="btn btn-primary" disabled="@ocupado" @onclick='() => Preparar("crear")'>Crear propuesta</button></section>
+}
+@foreach(var c in contratos){
+<article class="card card-body mb-3"><p class="eyebrow">@c.Estado</p><h2 class="h5">@c.Numero</h2><dl><dt>Periodo acordado (hora dominicana)</dt><dd>@Mostrar(c.Inicio) — @(c.Fin is null?"Sin fecha final":Mostrar(c.Fin.Value))</dd><dt>Monto mensual</dt><dd>@c.Moneda @c.Monto.ToString("N2")</dd></dl>
+@if(c.Estado=="Borrador"){
+    @if(Sesion.Usuario?.Rol=="Comprador"){<button class="btn btn-success" disabled="@ocupado" @onclick='() => Preparar("activar")'>Confirmar acuerdo académico</button>}
+    <button class="btn btn-outline-danger" disabled="@ocupado" @onclick='() => Preparar("cancelar")'>Cancelar propuesta</button>
+}
+@if(c.Estado=="Activo" && Sesion.Usuario?.Rol=="Vendedor"){<button class="btn btn-outline-danger" disabled="@ocupado" @onclick='() => Preparar("finalizar")'>Finalizar alquiler académico</button>}
+</article>
+}
+@if(accion is not null){<section class="alert alert-warning" role="alert"><p>@Explicacion</p><button disabled="@ocupado" class="btn btn-primary" @onclick="Ejecutar">Confirmar operación</button><button disabled="@ocupado" class="btn btn-link" @onclick="() => accion=null">Volver</button></section>}
+@if(listo){
+<h2 class="h4 mt-4">Pagos simulados</h2><p>Importes registrados para seguimiento académico. Ningún pago se procesa mediante esta aplicación.</p>
+@foreach(var p in pagos){<article class="card card-body mb-2"><h3 class="h5">@p.Moneda @p.Monto.ToString("N2") · @p.Estado</h3><p>@p.Concepto</p><p class="mb-0">Referencia: @p.Referencia · @(p.Fecha is null?"":Mostrar(p.Fecha.Value))</p></article>}
+@if(pagos.Count==0){<p>No hay pagos registrados.</p>}
+@if(Sesion.Usuario?.Rol=="Vendedor" && contratos.Any(c=>c.Estado=="Activo")){
+<section class="card card-body mt-3"><h3 class="h5">Registrar pago simulado</h3>
+<label for="pago-monto">Monto</label><input id="pago-monto" type="number" min="0.01" max="999999999" step="0.01" class="form-control mb-3" @bind="monto" />
+<label for="pago-fecha">Fecha y hora del registro simulado (hora dominicana)</label><input id="pago-fecha" type="datetime-local" class="form-control mb-3" @bind="fecha" />
+<label for="pago-concepto">Concepto</label><input id="pago-concepto" maxlength="200" class="form-control mb-3" @bind="concepto" />
+<label for="pago-referencia">Referencia única para esta solicitud</label><input id="pago-referencia" maxlength="200" class="form-control mb-3" @bind="referencia" />
+<button disabled="@ocupado" class="btn btn-primary" @onclick="Pagar">Registrar simulación</button></section>
+}
+}
+<a href="/mis-solicitudes" class="btn btn-link mt-3">Volver a solicitudes</a>
+}
+@code {
+[Parameter] public int Id{get;set;}
+List<ContratoDto> contratos=[];List<PagoDto> pagos=[];bool ocupado,listo;string? mensaje,accion;
+decimal monto;string concepto="Alquiler simulado",referencia="";DateTime fecha=DateTime.UtcNow.AddHours(-4).AddMinutes(-1);
+string Ruta=>$"api/v1/solicitudes/{Id}";
+static string Mostrar(DateTime utc)=>new DateTimeOffset(DateTime.SpecifyKind(utc,DateTimeKind.Utc)).ToOffset(TimeSpan.FromHours(-4)).ToString("dd/MM/yyyy HH:mm");
+string Explicacion=>accion switch{"crear"=>"Se creará una propuesta académica con las fechas de la reserva confirmada y el precio mensual de la publicación.","activar"=>"Se activará el acuerdo académico, se convertirá la reserva y la propiedad se marcará como alquilada desde ahora. Sus publicaciones serán retiradas. No es una firma legal ni realiza un cobro.","cancelar"=>"Se cancelarán la propuesta y su reserva, conservando el historial.",_=>"Se finalizará este acuerdo académico. La propiedad quedará disponible; sus anuncios seguirán retirados. Los pagos simulados se conservarán."};
+void Preparar(string nueva)=>accion=nueva;
+protected override Task OnParametersSetAsync(){accion=null;return Cargar();}
+async Task Cargar(){if(Sesion.Token is null)return;ocupado=true;listo=false;try{contratos=await Api.Consultar<List<ContratoDto>>($"{Ruta}/contratos",Sesion.Token);pagos=await Api.Consultar<List<PagoDto>>($"{Ruta}/pagos",Sesion.Token);listo=true;}catch(Exception ex)when(ex is HttpRequestException or TaskCanceledException){mensaje="No se pudo cargar el contrato. Comprueba tu sesión y los permisos de esta solicitud.";}finally{ocupado=false;}}
+async Task Ejecutar(){if(ocupado||Sesion.Token is null||accion is null)return;ocupado=true;mensaje=await Api.Enviar(HttpMethod.Post,$"{Ruta}/contratos/{accion}",null,Sesion.Token)??"Operación guardada.";accion=null;await Cargar();}
+async Task Pagar(){if(ocupado||Sesion.Token is null)return;if(monto<=0||monto>999999999||decimal.Round(monto,2)!=monto||string.IsNullOrWhiteSpace(concepto)||string.IsNullOrWhiteSpace(referencia)){mensaje="Revisa el monto, concepto y referencia.";return;}ocupado=true;var fallo=await Api.Enviar(HttpMethod.Post,$"{Ruta}/pagos",new PagoSimuladoRequest(monto,new DateTimeOffset(DateTime.SpecifyKind(fecha,DateTimeKind.Unspecified),TimeSpan.FromHours(-4)),concepto,referencia),Sesion.Token);mensaje=fallo??"Pago simulado registrado.";if(fallo is null){referencia="";monto=0;}await Cargar();}
+}
