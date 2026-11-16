@@ -1,5 +1,7 @@
 # Inmobiliaria - Luilton y Yerferson
-Base inicial .NET 10, solo alquiler. Yerferson Rosario Peña: 100444062. Datos de Luilton pendientes.
+Base inicial .NET 10, solo alquiler. 
+Yerferson Rosario Peña: 100444062. 
+Luilton Pichardo Hernandez 100731976
 
 ## Arranque rapido
 Extraer en una carpeta nueva. Abrir la carpeta Inmobiliaria_Progm4 que contiene Inmobiliaria.sln.
