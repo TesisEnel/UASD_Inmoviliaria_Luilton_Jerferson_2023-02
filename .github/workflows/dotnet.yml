@@ -5,24 +5,32 @@ name: .NET
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 10.0.x
-    - name: Restore dependencies
-      run: dotnet restore
-    - name: Build
-      run: dotnet build --no-restore
-    - name: Test
-      run: dotnet test --no-build --verbosity normal
+      - uses: actions/checkout@v6
+
+      - name: Instalar .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # Ubuntu necesita descargar las referencias que usa Windows Forms.
+      - name: Restaurar dependencias
+        run: dotnet restore Inmobiliaria.sln -p:EnableWindowsTargeting=true
+
+      # Compilamos todo de una vez. Hasta el escritorio pasa lista.
+      - name: Compilar solución
+        run: dotnet build Inmobiliaria.sln --configuration Release --no-restore -p:EnableWindowsTargeting=true
+
+      - name: Probar servicios
+        run: dotnet test tests/Inmobiliaria.Application.UnitTests/Inmobiliaria.Application.UnitTests.csproj --configuration Release --no-build
+
+      - name: Probar la web
+        run: dotnet test tests/Inmobiliaria.Web.Tests/Inmobiliaria.Web.Tests.csproj --configuration Release --no-build
