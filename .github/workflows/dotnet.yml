@@ -1,8 +1,9 @@
 # This workflow will build a .NET project
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
 
-name: .NET
+name: Compilar y probar Inmobiliaria
 
+# Cada push o PR hacia main pasa por aquí. El «en mi máquina funciona» cuenta como anécdota.
 on:
   push:
     branches: [main]
@@ -11,26 +12,46 @@ on:
 
 jobs:
   build:
+    name: Compilar y ejecutar pruebas
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
 
     steps:
-      - uses: actions/checkout@v6
+      # El runner empieza limpio, así que primero trae el código del commit.
+      - name: Descargar código
+        uses: actions/checkout@v6
 
       - name: Instalar .NET 10
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
-      # Ubuntu necesita descargar las referencias que usa Windows Forms.
+      # Ubuntu necesita descargar las referencias de Windows Forms. Hasta el escritorio pasa lista.
       - name: Restaurar dependencias
         run: dotnet restore Inmobiliaria.sln -p:EnableWindowsTargeting=true
 
-      # Compilamos todo de una vez. Hasta el escritorio pasa lista.
+      # Compilamos toda la solución en Release con los paquetes ya restaurados.
       - name: Compilar solución
+        id: compilacion
         run: dotnet build Inmobiliaria.sln --configuration Release --no-restore -p:EnableWindowsTargeting=true
 
+      # Las pruebas de integración también se compilan. Ejecutarlas requiere SQLEXPRESS en Windows.
       - name: Probar servicios
-        run: dotnet test tests/Inmobiliaria.Application.UnitTests/Inmobiliaria.Application.UnitTests.csproj --configuration Release --no-build
+        run: dotnet test tests/Inmobiliaria.Application.UnitTests/Inmobiliaria.Application.UnitTests.csproj --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=servicios.trx" --results-directory TestResults
 
+      # Si falla una prueba de servicios, la web todavía tiene que entregar su examen.
       - name: Probar la web
-        run: dotnet test tests/Inmobiliaria.Web.Tests/Inmobiliaria.Web.Tests.csproj --configuration Release --no-build
+        if: ${{ !cancelled() && steps.compilacion.outcome == 'success' }}
+        run: dotnet test tests/Inmobiliaria.Web.Tests/Inmobiliaria.Web.Tests.csproj --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=web.trx" --results-directory TestResults
+
+      # Las notas quedan en Checks, a la vista de cualquiera que revise el PR.
+      - name: Publicar resultados en Checks
+        if: ${{ !cancelled() && steps.compilacion.outcome == 'success' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: dorny/test-reporter@v2
+        with:
+          name: Resultados .NET (Servicios y Web)
+          path: TestResults/*.trx
+          reporter: dotnet-trx
+          fail-on-empty: 'false'
