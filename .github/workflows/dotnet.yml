@@ -1,7 +1,7 @@
 name: Compilar y probar Inmobiliaria
 
-# Cada push o PR hacia main pasa por aquí.
-# El "en mi máquina funciona" tendrá que convencer también a Ubuntu.
+# Se ejecuta al hacer push o crear un pull request hacia main.
+# También permite iniciar el workflow manualmente desde GitHub Actions.
 on:
   push:
     branches: [main]
@@ -23,33 +23,42 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
-      # Traemos todo el historial para que Sonar pueda comparar los cambios.
+      # 1) Descarga el código fuente del repositorio.
+      # Incluimos el historial completo para que Sonar pueda comparar los cambios.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
+      # 2) Instala el SDK de .NET 10 que utiliza Inmobiliaria.
+      # Así el runner compila con la versión correspondiente al proyecto.
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
-      # Ubuntu descarga las referencias necesarias para compilar Windows Forms.
+      # 3) Restaura los paquetes NuGet de toda la solución.
+      # EnableWindowsTargeting permite compilar Windows Forms desde Ubuntu.
       # Hasta el escritorio tiene que pasar lista.
       - name: Restore dependencies
         run: dotnet restore Inmobiliaria.sln -p:EnableWindowsTargeting=true
 
+      # 4) Instala SonarScanner para analizar el código .NET.
+      # Este paso se ejecuta cuando está configurado el secreto SONAR_TOKEN.
       - name: Install SonarScanner
         if: ${{ env.SONAR_TOKEN != '' }}
         run: |
           dotnet tool install --global dotnet-sonarscanner
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
+      # 5) Avisa si falta SONAR_TOKEN y continúa con la compilación y las pruebas.
+      # El análisis de Sonar se activará cuando configuremos el secreto.
       - name: SonarCloud analysis skipped
         if: ${{ env.SONAR_TOKEN == '' }}
         run: echo "Configura el secreto SONAR_TOKEN para activar SonarQube Cloud."
 
-      # Sonar empieza antes del build para recoger la información de compilación.
+      # 6) Inicia el análisis de SonarQube Cloud antes de compilar.
+      # La organización y el Project Key vinculan el análisis con nuestro proyecto.
       - name: Begin SonarCloud analysis
         id: sonar_begin
         if: ${{ env.SONAR_TOKEN != '' }}
@@ -60,30 +69,37 @@ jobs:
             /d:sonar.token="$SONAR_TOKEN" \
             /d:sonar.host.url="https://sonarcloud.io"
 
-      # Compilamos todos los proyectos incluidos en la solución.
+      # 7) Compila toda la solución en modo Release.
+      # --no-restore aprovecha los paquetes descargados en el paso 3.
+      # Aquí el "en mi máquina funciona" también tiene que convencer a Ubuntu.
       - name: Build solution
         id: compilacion
         run: dotnet build Inmobiliaria.sln --configuration Release --no-restore -p:EnableWindowsTargeting=true
 
-      # Las pruebas de integración se compilan con la solución.
+      # 8) Ejecuta las pruebas de servicios y web y genera sus reportes TRX.
+      # Primero comprobamos los servicios.
+      # Las pruebas de integración se compilan en el paso 7.
       # Su ejecución requiere la instancia SQLEXPRESS configurada en Windows.
       - name: Test services
         if: ${{ !cancelled() && steps.compilacion.outcome == 'success' }}
         run: dotnet test tests/Inmobiliaria.Application.UnitTests/Inmobiliaria.Application.UnitTests.csproj --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=servicios.trx" --results-directory TestResults
 
+      # Continuación del paso 8: comprobamos la web.
       # Si los servicios fallan, la web todavía tiene su propio examen.
       - name: Test web
         if: ${{ !cancelled() && steps.compilacion.outcome == 'success' }}
         run: dotnet test tests/Inmobiliaria.Web.Tests/Inmobiliaria.Web.Tests.csproj --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=web.trx" --results-directory TestResults
 
-      # Enviamos el análisis aunque una prueba haya fallado,
-      # siempre que Sonar haya iniciado y la compilación haya terminado bien.
+      # 9) Finaliza el análisis y envía los resultados a SonarQube Cloud.
+      # Se ejecuta si Sonar inició y la solución compiló correctamente,
+      # incluso cuando alguna prueba haya fallado.
       - name: End SonarCloud analysis
         if: ${{ !cancelled() && steps.sonar_begin.outcome == 'success' && steps.compilacion.outcome == 'success' }}
         run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 
-      # Los resultados aparecen directamente en Checks.
-      # Si no se generaron reportes, evitamos un segundo error que tape al primero.
+      # 10) Publica los resultados directamente en GitHub Checks.
+      # Solo intenta publicarlos cuando existen archivos TRX y el contexto
+      # permite escribir checks, evitando otro error si las pruebas no arrancaron.
       - name: Publish test results
         uses: dorny/test-reporter@v2
         if: ${{ !cancelled() && hashFiles('TestResults/**/*.trx') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
