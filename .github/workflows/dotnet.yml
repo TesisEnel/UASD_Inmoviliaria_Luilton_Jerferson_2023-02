@@ -1,103 +1,93 @@
-name: Build solution
+name: Compilar y probar Inmobiliaria
 
-env:
-  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-# Este workflow se ejecuta cuando alguien hace push o crea un pull request
-# hacia la rama principal. La idea es verificar automáticamente que el proyecto
-# sigue compilando y que las pruebas siguen pasando.
+# Cada push o PR hacia main pasa por aquí.
+# El "en mi máquina funciona" tendrá que convencer también a Ubuntu.
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build and test
-    # Usamos un runner Linux de GitHub Actions, que es suficiente para compilar
-    # y probar una solución .NET.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     permissions:
       contents: read
       checks: write
 
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
     steps:
-      # 1) Descarga el código fuente del repositorio para que el workflow pueda
-      # trabajar con los archivos del proyecto.
+      # Traemos todo el historial para que Sonar pueda comparar los cambios.
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      # 2) Instala el SDK de .NET necesario para compilar la solución.
-      # El proyecto usa .NET 10, por eso se configura la versión 10.0.x.
-      - name: Setup .NET SDK .NET 10
-        uses: actions/setup-dotnet@v4
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
-      # 3) Restaura todos los paquetes NuGet y dependencias del proyecto antes
-      # de compilar. Esto asegura que el entorno ya tenga todo lo necesario.
+      # Ubuntu descarga las referencias necesarias para compilar Windows Forms.
+      # Hasta el escritorio tiene que pasar lista.
       - name: Restore dependencies
-        run: dotnet restore Inmobiliaria.sln
+        run: dotnet restore Inmobiliaria.sln -p:EnableWindowsTargeting=true
 
-      # 4) Instala la herramienta de SonarScanner para .NET. Si el secreto
-      # SONAR_TOKEN no existe, esta parte se omite para que el pipeline no falle.
       - name: Install SonarScanner
         if: ${{ env.SONAR_TOKEN != '' }}
-        shell: bash
         run: |
           dotnet tool install --global dotnet-sonarscanner
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
-      # 5) Si no hay token de SonarCloud configurado, avisamos al usuario pero
-      # el flujo sigue funcionando normalmente.
       - name: SonarCloud analysis skipped
         if: ${{ env.SONAR_TOKEN == '' }}
-        run: echo "Skipping SonarCloud analysis because SONAR_TOKEN is not configured."
+        run: echo "Configura el secreto SONAR_TOKEN para activar SonarQube Cloud."
 
-      # 6) Inicia la analítica de SonarCloud antes de compilar para que el
-      # análisis cubra la solución completa.
+      # Sonar empieza antes del build para recoger la información de compilación.
       - name: Begin SonarCloud analysis
+        id: sonar_begin
         if: ${{ env.SONAR_TOKEN != '' }}
         run: |
-          export PATH="$PATH:$HOME/.dotnet/tools"
           dotnet sonarscanner begin \
             /o:"tesisenel" \
             /k:"TesisEnel_UASD_Inmoviliaria_Luilton_Jerferson_2023-02" \
-            /d:sonar.token="${SONAR_TOKEN}" \
+            /d:sonar.token="$SONAR_TOKEN" \
             /d:sonar.host.url="https://sonarcloud.io"
 
-      # 7) Compila la solución en modo Release. El flag --no-restore evita que
-      # vuelva a restaurar paquetes ya descargados y acelera la ejecución.
+      # Compilamos todos los proyectos incluidos en la solución.
       - name: Build solution
-        run: dotnet build Inmobiliaria.sln --configuration Release --no-restore
+        id: compilacion
+        run: dotnet build Inmobiliaria.sln --configuration Release --no-restore -p:EnableWindowsTargeting=true
 
-      # 8) Ejecuta la suite de pruebas del proyecto. Si alguna prueba falla,
-      # el workflow marcará el pipeline como fallido.
-      # Además, guardamos los resultados en formato TRX para que GitHub pueda
-      # mostrarlos de forma amigable en la interfaz.
-      - name: Run tests
-        run: dotnet test Inmobiliaria.sln --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
+      # Las pruebas de integración se compilan con la solución.
+      # Su ejecución requiere la instancia SQLEXPRESS configurada en Windows.
+      - name: Test services
+        if: ${{ !cancelled() && steps.compilacion.outcome == 'success' }}
+        run: dotnet test tests/Inmobiliaria.Application.UnitTests/Inmobiliaria.Application.UnitTests.csproj --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=servicios.trx" --results-directory TestResults
 
-      # 9) Cierra la analítica de SonarCloud para finalizar el análisis y enviar
-      # los resultados al proyecto configurado en SonarCloud.
+      # Si los servicios fallan, la web todavía tiene su propio examen.
+      - name: Test web
+        if: ${{ !cancelled() && steps.compilacion.outcome == 'success' }}
+        run: dotnet test tests/Inmobiliaria.Web.Tests/Inmobiliaria.Web.Tests.csproj --configuration Release --no-build --verbosity minimal --logger "trx;LogFileName=web.trx" --results-directory TestResults
+
+      # Enviamos el análisis aunque una prueba haya fallado,
+      # siempre que Sonar haya iniciado y la compilación haya terminado bien.
       - name: End SonarCloud analysis
-        if: ${{ env.SONAR_TOKEN != '' }}
-        run: |
-          export PATH="$PATH:$HOME/.dotnet/tools"
-          dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
+        if: ${{ !cancelled() && steps.sonar_begin.outcome == 'success' && steps.compilacion.outcome == 'success' }}
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 
-      # 10) Publica los resultados de pruebas en GitHub como un Check/Status,
-      # para que los estudiantes puedan ver en una vista organizada si hubo
-      # fallas o éxito en cada ejecución del pipeline.
+      # Los resultados aparecen directamente en Checks.
+      # Si no se generaron reportes, evitamos un segundo error que tape al primero.
       - name: Publish test results
-        uses: dorny/test-reporter@v1
-        if: ${{ !cancelled() && github.event.pull_request.head.repo.fork != true }}
+        uses: dorny/test-reporter@v2
+        if: ${{ !cancelled() && hashFiles('TestResults/**/*.trx') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         with:
-          name: .NET test results
+          name: Resultados .NET - Servicios y Web
           path: 'TestResults/**/*.trx'
           reporter: dotnet-trx
